@@ -128,6 +128,7 @@
       display: flex; align-items: center; gap: 4px;
     }
     .streak strong { color: var(--accent); }
+    .time-tag { color: var(--done); font-weight: 600; }
     .icon-btn {
       background: transparent; border: none; cursor: pointer;
       color: var(--muted); font-size: 18px; padding: 6px;
@@ -244,9 +245,24 @@
     .cal-day.done { background: var(--done); color: #fff; font-weight: 600; }
     .cal-day.today { box-shadow: inset 0 0 0 2px var(--accent); }
     .cal-day.blank { background: transparent; }
+    .cal-day[data-date] { cursor: pointer; }
+    .cal-day[data-date]:active { transform: scale(0.9); }
     .cal-month { text-align: center; font-weight: 600; font-size: 15px; margin-bottom: 12px; text-transform: capitalize; }
     .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
     .month-nav button { background: var(--card); border: none; font-size: 20px; padding: 6px 14px; border-radius: 10px; cursor: pointer; box-shadow: var(--shadow); color: var(--accent); }
+
+    /* Detalhe do dia */
+    .day-habit { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+    .day-status {
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 16px;
+      margin-bottom: 18px;
+    }
+    .day-status.done { background: var(--accent-soft); }
+    .day-status strong { color: var(--done); font-size: 18px; }
+    .muted-note { color: var(--muted); font-size: 14px; }
   </style>
 </head>
 <body>
@@ -297,6 +313,17 @@
       </div>
       <div class="btn-row" id="deleteRow" style="display:none;">
         <button class="btn btn-danger" id="deleteBtn">Apagar hábito</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal detalhe do dia (histórico) -->
+  <div class="overlay" id="dayOverlay">
+    <div class="sheet">
+      <h2 id="dayTitle">Detalhe do dia</h2>
+      <div id="dayDetail"></div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="dayClose">Fechar</button>
       </div>
     </div>
   </div>
@@ -362,6 +389,15 @@
     function todayKey() {
       return keyOf(effectiveDate());
     }
+    // horário do relógio ao marcar (HH:MM)
+    function nowTime() {
+      const d = new Date();
+      return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    }
+    // extrai o horário salvo (marcações antigas eram "true", sem horário)
+    function markTime(v) {
+      return (typeof v === 'string' && /^\d{2}:\d{2}$/.test(v)) ? v : null;
+    }
     function calcStreak(habit) {
       // conta dias seguidos até hoje (ou ontem, se hoje ainda não marcado)
       let streak = 0;
@@ -387,18 +423,20 @@
       list.innerHTML = '';
       state.habits.forEach(h => {
         const done = !!h.days[tk];
+        const time = markTime(h.days[tk]);
         const streak = calcStreak(h);
         const el = document.createElement('div');
         el.className = 'habit';
         el.setAttribute('data-toggle', h.id);
         const label = (h.emoji ? h.emoji + ' ' : '') + escapeHtml(h.name);
+        const timeTag = (done && time) ? ` · <span class="time-tag">⏰ ${time}</span>` : '';
         el.innerHTML = `
           <span class="check ${done?'done':''}" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>
           </span>
           <div class="habit-info">
             <div class="habit-name ${done?'done':''}">${label}</div>
-            <div class="streak">🔥 <strong>${streak}</strong> ${streak===1?'dia':'dias'} seguidos</div>
+            <div class="streak">🔥 <strong>${streak}</strong> ${streak===1?'dia':'dias'} seguidos${timeTag}</div>
           </div>
           <button class="icon-btn" data-edit="${h.id}" aria-label="editar">✏️</button>
         `;
@@ -437,7 +475,7 @@
           const key = year + '-' + String(month+1).padStart(2,'0') + '-' + String(day).padStart(2,'0');
           const done = !!h.days[key];
           const isToday = key === tk;
-          cells += `<div class="cal-day ${done?'done':''} ${isToday?'today':''}">${day}</div>`;
+          cells += `<div class="cal-day ${done?'done':''} ${isToday?'today':''}" data-habit="${h.id}" data-date="${key}">${day}</div>`;
         }
         // total do mês
         let total = 0;
@@ -470,9 +508,37 @@
       if (toggle) {
         const h = state.habits.find(x => x.id === toggle.dataset.toggle);
         const tk = todayKey();
-        if (h.days[tk]) delete h.days[tk]; else h.days[tk] = true;
+        if (h.days[tk]) delete h.days[tk]; else h.days[tk] = nowTime();
         save(); renderToday();
       }
+    });
+
+    // Detalhe do dia no histórico (clicar num dia do calendário)
+    document.getElementById('historyList').addEventListener('click', e => {
+      const cell = e.target.closest('.cal-day[data-date]');
+      if (cell) openDayDetail(cell.dataset.habit, cell.dataset.date);
+    });
+    function openDayDetail(habitId, key) {
+      const h = state.habits.find(x => x.id === habitId);
+      if (!h) return;
+      const [y,m,dd] = key.split('-').map(Number);
+      const label = new Date(y, m-1, dd).toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
+      const val = h.days[key];
+      const done = !!val;
+      const time = markTime(val);
+      const nome = (h.emoji ? h.emoji + ' ' : '') + escapeHtml(h.name);
+      let status;
+      if (done && time) status = `<div class="day-status done">✅ Marcado às <strong>${time}</strong></div>`;
+      else if (done) status = `<div class="day-status done">✅ Marcado <span class="muted-note">(sem horário registrado)</span></div>`;
+      else status = `<div class="day-status">⬜ Não foi marcado neste dia</div>`;
+      document.getElementById('dayTitle').textContent = label.charAt(0).toUpperCase() + label.slice(1);
+      document.getElementById('dayDetail').innerHTML = `<div class="day-habit">${nome}</div>${status}`;
+      document.getElementById('dayOverlay').classList.add('open');
+    }
+    document.getElementById('dayClose').addEventListener('click', () =>
+      document.getElementById('dayOverlay').classList.remove('open'));
+    document.getElementById('dayOverlay').addEventListener('click', e => {
+      if (e.target.id === 'dayOverlay') e.currentTarget.classList.remove('open');
     });
 
     // Abas
