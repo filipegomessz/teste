@@ -128,7 +128,8 @@
       display: flex; align-items: center; gap: 4px;
     }
     .streak strong { color: var(--accent); }
-    .time-tag { color: var(--done); font-weight: 600; }
+    .time-tag { color: var(--done); font-weight: 600; cursor: pointer; }
+    .time-tag:active { opacity: 0.6; }
     .icon-btn {
       background: transparent; border: none; cursor: pointer;
       color: var(--muted); font-size: 18px; padding: 6px;
@@ -263,6 +264,49 @@
     .day-status.done { background: var(--accent-soft); }
     .day-status strong { color: var(--done); font-size: 18px; }
     .muted-note { color: var(--muted); font-size: 14px; }
+
+    /* Seletor de horário estilo despertador */
+    .wheel-picker {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      height: 220px;
+      margin: 4px 0 20px;
+      -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+      mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+    }
+    .wheel-col {
+      height: 220px;
+      overflow-y: scroll;
+      scroll-snap-type: y mandatory;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      text-align: center;
+      flex: 0 0 88px;
+    }
+    .wheel-col::-webkit-scrollbar { display: none; }
+    .wheel-item {
+      height: 44px;
+      line-height: 44px;
+      font-size: 26px;
+      font-weight: 600;
+      scroll-snap-align: center;
+      color: var(--muted);
+      transition: color .1s, transform .1s;
+    }
+    .wheel-item.sel { color: var(--accent); transform: scale(1.12); }
+    .wheel-spacer { height: 88px; }
+    .wheel-sep { font-size: 26px; font-weight: 700; color: var(--text); }
+    .wheel-band {
+      position: absolute;
+      left: 0; right: 0;
+      top: 88px; height: 44px;
+      border-top: 1.5px solid var(--line);
+      border-bottom: 1.5px solid var(--line);
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -322,9 +366,26 @@
     <div class="sheet">
       <h2 id="dayTitle">Detalhe do dia</h2>
       <div id="dayDetail"></div>
+      <div class="btn-row" id="dayActions"></div>
       <div class="btn-row">
         <button class="btn btn-ghost" id="dayClose">Fechar</button>
-        <button class="btn btn-primary" id="dayToggle">Marcar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal seletor de horário (estilo despertador) -->
+  <div class="overlay" id="timeOverlay">
+    <div class="sheet">
+      <h2 id="timeTitle">Escolher horário</h2>
+      <div class="wheel-picker">
+        <div class="wheel-col" id="wheelHours"></div>
+        <div class="wheel-sep">:</div>
+        <div class="wheel-col" id="wheelMinutes"></div>
+        <div class="wheel-band"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="timeCancel">Cancelar</button>
+        <button class="btn btn-primary" id="timeConfirm">Confirmar</button>
       </div>
     </div>
   </div>
@@ -430,7 +491,7 @@
         el.className = 'habit';
         el.setAttribute('data-toggle', h.id);
         const label = (h.emoji ? h.emoji + ' ' : '') + escapeHtml(h.name);
-        const timeTag = (done && time) ? ` · <span class="time-tag">⏰ ${time}</span>` : '';
+        const timeTag = (done && time) ? ` · <span class="time-tag" data-edittime="${h.id}">⏰ ${time} ✎</span>` : '';
         el.innerHTML = `
           <span class="check ${done?'done':''}" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>
@@ -504,6 +565,16 @@
         openSheet(state.habits.find(x => x.id === edit.dataset.edit));
         return;
       }
+      // tocar no horário abre o seletor pra mudar (sem desmarcar)
+      const et = e.target.closest('[data-edittime]');
+      if (et) {
+        const h = state.habits.find(x => x.id === et.dataset.edittime);
+        const tk = todayKey();
+        openTimePicker(markTime(h.days[tk]) || nowTime(), 'Horário — ' + h.name, val => {
+          h.days[tk] = val; save(); renderToday();
+        });
+        return;
+      }
       // clicar em qualquer outra parte do hábito marca/desmarca
       const toggle = e.target.closest('[data-toggle]');
       if (toggle) {
@@ -519,11 +590,9 @@
       const cell = e.target.closest('.cal-day[data-date]');
       if (cell) openDayDetail(cell.dataset.habit, cell.dataset.date);
     });
-    let currentDay = null; // { habitId, key }
     function openDayDetail(habitId, key) {
       const h = state.habits.find(x => x.id === habitId);
       if (!h) return;
-      currentDay = { habitId, key };
       const [y,m,dd] = key.split('-').map(Number);
       const label = new Date(y, m-1, dd).toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
       const val = h.days[key];
@@ -538,30 +607,31 @@
       else status = `<div class="day-status">⬜ Não foi marcado neste dia</div>`;
       document.getElementById('dayTitle').textContent = label.charAt(0).toUpperCase() + label.slice(1);
       document.getElementById('dayDetail').innerHTML = `<div class="day-habit">${nome}</div>${status}`;
-      // botão marcar/desmarcar (escondido em dias futuros)
-      const btn = document.getElementById('dayToggle');
-      if (future) {
-        btn.style.display = 'none';
-      } else {
-        btn.style.display = '';
-        btn.textContent = done ? 'Desmarcar dia' : 'Marcar dia';
-        btn.className = 'btn ' + (done ? 'btn-danger' : 'btn-primary');
+
+      // ações do dia (escondidas em dias futuros)
+      const actions = document.getElementById('dayActions');
+      actions.innerHTML = '';
+      const addBtn = (txt, cls, fn) => {
+        const b = document.createElement('button');
+        b.className = 'btn ' + cls; b.textContent = txt; b.onclick = fn;
+        actions.appendChild(b);
+      };
+      const refresh = () => { save(); renderToday(); renderHistory(); openDayDetail(habitId, key); };
+      if (!future) {
+        if (done) {
+          addBtn('Mudar horário', 'btn-primary', () => {
+            openTimePicker(time || nowTime(), 'Horário — ' + h.name, val => { h.days[key] = val; refresh(); });
+          });
+          addBtn('Desmarcar dia', 'btn-danger', () => { delete h.days[key]; refresh(); });
+        } else {
+          addBtn('⏰ Marcar agora', 'btn-primary', () => { h.days[key] = nowTime(); refresh(); });
+          addBtn('Escolher horário', 'btn-ghost', () => {
+            openTimePicker(nowTime(), 'Horário — ' + h.name, val => { h.days[key] = val; refresh(); });
+          });
+        }
       }
       document.getElementById('dayOverlay').classList.add('open');
     }
-    function toggleDay(habitId, key) {
-      const h = state.habits.find(x => x.id === habitId);
-      if (!h || key > todayKey()) return;
-      if (h.days[key]) delete h.days[key];
-      else h.days[key] = (key === todayKey()) ? nowTime() : true; // dia atual guarda horário; passado fica sem
-      save();
-      renderToday();
-      renderHistory();
-      openDayDetail(habitId, key); // reabre atualizado
-    }
-    document.getElementById('dayToggle').addEventListener('click', () => {
-      if (currentDay) toggleDay(currentDay.habitId, currentDay.key);
-    });
     document.getElementById('dayClose').addEventListener('click', () =>
       document.getElementById('dayOverlay').classList.remove('open'));
     document.getElementById('dayOverlay').addEventListener('click', e => {
@@ -654,6 +724,71 @@
       return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    // ---------- Seletor de horário (rodinhas estilo despertador) ----------
+    const IH = 44; // altura de cada item
+    const MINUTES = Array.from({length:12}, (_,i) => i*5); // 0,5,...,55
+    let timeOnConfirm = null;
+
+    function buildWheel(col, values) {
+      col.innerHTML = '<div class="wheel-spacer"></div>' +
+        values.map(v => `<div class="wheel-item">${String(v).padStart(2,'0')}</div>`).join('') +
+        '<div class="wheel-spacer"></div>';
+    }
+    function wheelIndex(col) {
+      return Math.max(0, Math.round(col.scrollTop / IH));
+    }
+    function markSel(col) {
+      const idx = wheelIndex(col);
+      const items = col.querySelectorAll('.wheel-item');
+      items.forEach((el, i) => el.classList.toggle('sel', i === idx));
+    }
+    function setupWheels() {
+      const hoursCol = document.getElementById('wheelHours');
+      const minCol = document.getElementById('wheelMinutes');
+      buildWheel(hoursCol, Array.from({length:24}, (_,i) => i));
+      buildWheel(minCol, MINUTES);
+      [hoursCol, minCol].forEach(col => {
+        let t;
+        col.addEventListener('scroll', () => {
+          markSel(col);
+          clearTimeout(t);
+          t = setTimeout(() => markSel(col), 60);
+        });
+      });
+    }
+    function openTimePicker(initial, title, onConfirm) {
+      timeOnConfirm = onConfirm;
+      document.getElementById('timeTitle').textContent = title || 'Escolher horário';
+      const base = (initial && /^\d{2}:\d{2}$/.test(initial)) ? initial : nowTime();
+      const [hh, mm] = base.split(':').map(Number);
+      const hoursCol = document.getElementById('wheelHours');
+      const minCol = document.getElementById('wheelMinutes');
+      document.getElementById('timeOverlay').classList.add('open');
+      // precisa estar visível pra ajustar o scroll
+      setTimeout(() => {
+        hoursCol.scrollTop = Math.min(23, Math.max(0, hh)) * IH;
+        minCol.scrollTop = Math.min(11, Math.round(mm / 5)) * IH;
+        markSel(hoursCol); markSel(minCol);
+      }, 30);
+    }
+    function closeTimePicker() {
+      document.getElementById('timeOverlay').classList.remove('open');
+      timeOnConfirm = null;
+    }
+    document.getElementById('timeConfirm').addEventListener('click', () => {
+      const hIdx = wheelIndex(document.getElementById('wheelHours'));
+      const mIdx = wheelIndex(document.getElementById('wheelMinutes'));
+      const hh = String(Math.min(23, hIdx)).padStart(2,'0');
+      const mm = String(MINUTES[Math.min(11, mIdx)]).padStart(2,'0');
+      const cb = timeOnConfirm;
+      closeTimePicker();
+      if (cb) cb(hh + ':' + mm);
+    });
+    document.getElementById('timeCancel').addEventListener('click', closeTimePicker);
+    document.getElementById('timeOverlay').addEventListener('click', e => {
+      if (e.target.id === 'timeOverlay') closeTimePicker();
+    });
+
     // ---------- Ajustes ----------
     function buildHourOptions() {
       const sel = document.getElementById('resetHourSelect');
@@ -701,6 +836,7 @@
     });
 
     // ---------- Início ----------
+    setupWheels();
     applyTheme();
     // se o tema for automático, acompanha mudanças do sistema em tempo real
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
