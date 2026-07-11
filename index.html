@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#4f8cff">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Hábitos">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="./icon-192.png">
   <title>Meus Hábitos</title>
   <style>
     :root {
@@ -554,6 +558,13 @@
     // ---------- Início ----------
     updateTodayLabel();
     renderToday();
+
+    // Registra o service worker (faz funcionar offline quando servido por https)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
