@@ -229,7 +229,10 @@
 </head>
 <body>
   <header>
-    <h1>Meus Hábitos</h1>
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+      <h1>Meus Hábitos</h1>
+      <button class="icon-btn" id="settingsBtn" aria-label="ajustes" style="font-size:22px;">⚙️</button>
+    </div>
     <div class="subtitle" id="todayLabel"></div>
     <div class="tabs">
       <button class="tab active" data-view="today">Hoje</button>
@@ -276,6 +279,24 @@
     </div>
   </div>
 
+  <!-- Modal de ajustes -->
+  <div class="overlay" id="settingsOverlay">
+    <div class="sheet">
+      <h2>Ajustes</h2>
+      <div class="field">
+        <label>Horário em que o dia vira</label>
+        <div class="subtitle" style="margin:-2px 0 10px;">
+          Os hábitos "zeram" nesse horário. Antes dele, o que você marcar conta como o dia anterior.
+        </div>
+        <select id="resetHourSelect" style="width:100%; padding:14px; border:1.5px solid var(--line); border-radius:12px; font-size:16px; font-family:inherit; background:var(--bg); color:var(--text);"></select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-ghost" id="settingsCancel">Fechar</button>
+        <button class="btn btn-primary" id="settingsSave">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ---------- Armazenamento (offline, no próprio celular) ----------
     const STORE_KEY = 'meus_habitos_v1';
@@ -288,28 +309,36 @@
         const raw = localStorage.getItem(STORE_KEY);
         if (raw) return JSON.parse(raw);
       } catch(e) {}
-      return { habits: [] };
+      return { habits: [], settings: { resetHour: 6 } };
     }
     function save() {
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
     }
+    // migração/segurança: garante que settings exista
+    if (!state.settings) state.settings = { resetHour: 6 };
+    if (typeof state.settings.resetHour !== 'number') state.settings.resetHour = 6;
 
     // ---------- Utilidades de data ----------
-    function todayKey(d = new Date()) {
+    // O "dia ativo" vira no horário de corte (padrão 6h). Antes disso,
+    // ainda conta como o dia anterior — nada é apagado, só recalculado.
+    function keyOf(d) {
       return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
     }
-    function dateFromKey(k) {
-      const [y,m,d] = k.split('-').map(Number);
-      return new Date(y, m-1, d);
+    function effectiveDate(real = new Date()) {
+      // subtrai o horário de corte: às 5h59 volta pro dia anterior, às 6h vira o novo dia
+      return new Date(real.getTime() - state.settings.resetHour * 3600 * 1000);
+    }
+    function todayKey() {
+      return keyOf(effectiveDate());
     }
     function calcStreak(habit) {
       // conta dias seguidos até hoje (ou ontem, se hoje ainda não marcado)
       let streak = 0;
-      let d = new Date();
-      if (!habit.days[todayKey(d)]) {
-        d.setDate(d.getDate() - 1); // permite manter streak se hoje ainda não foi marcado
+      let d = effectiveDate();
+      if (!habit.days[keyOf(d)]) {
+        d.setDate(d.getDate() - 1); // permite manter streak se o dia ativo ainda não foi marcado
       }
-      while (habit.days[todayKey(d)]) {
+      while (habit.days[keyOf(d)]) {
         streak++;
         d.setDate(d.getDate() - 1);
       }
@@ -488,9 +517,42 @@
       return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
+    // ---------- Ajustes ----------
+    function buildHourOptions() {
+      const sel = document.getElementById('resetHourSelect');
+      sel.innerHTML = '';
+      for (let h = 0; h < 24; h++) {
+        const o = document.createElement('option');
+        o.value = h;
+        o.textContent = String(h).padStart(2,'0') + ':00';
+        if (h === state.settings.resetHour) o.selected = true;
+        sel.appendChild(o);
+      }
+    }
+    function updateTodayLabel() {
+      document.getElementById('todayLabel').textContent =
+        effectiveDate().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+      buildHourOptions();
+      document.getElementById('settingsOverlay').classList.add('open');
+    });
+    document.getElementById('settingsCancel').addEventListener('click', () => {
+      document.getElementById('settingsOverlay').classList.remove('open');
+    });
+    document.getElementById('settingsOverlay').addEventListener('click', e => {
+      if (e.target.id === 'settingsOverlay') e.currentTarget.classList.remove('open');
+    });
+    document.getElementById('settingsSave').addEventListener('click', () => {
+      state.settings.resetHour = parseInt(document.getElementById('resetHourSelect').value, 10) || 0;
+      save();
+      document.getElementById('settingsOverlay').classList.remove('open');
+      updateTodayLabel();
+      renderToday();
+    });
+
     // ---------- Início ----------
-    document.getElementById('todayLabel').textContent =
-      new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+    updateTodayLabel();
     renderToday();
   </script>
 </body>
