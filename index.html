@@ -25,6 +25,19 @@
       --radius: 16px;
       --shadow: 0 2px 12px rgba(31,36,48,0.06);
     }
+    /* Paleta escura */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #14171f; --card: #1e222c; --text: #e8eaf0; --muted: #868d9e;
+        --line: #2c313d; --accent: #5b93ff; --accent-soft: #23304d;
+        --shadow: 0 2px 12px rgba(0,0,0,0.35);
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #14171f; --card: #1e222c; --text: #e8eaf0; --muted: #868d9e;
+      --line: #2c313d; --accent: #5b93ff; --accent-soft: #23304d;
+      --shadow: 0 2px 12px rgba(0,0,0,0.35);
+    }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     html, body { margin: 0; padding: 0; }
     body {
@@ -84,7 +97,11 @@
       border-radius: var(--radius);
       box-shadow: var(--shadow);
       margin-bottom: 12px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
     }
+    .habit:active { background: var(--accent-soft); }
     .check {
       width: 30px; height: 30px;
       border-radius: 50%;
@@ -191,6 +208,7 @@
       display: flex; align-items: center; justify-content: center;
     }
     .emoji-opt.sel { border-color: var(--accent); background: var(--accent-soft); }
+    .emoji-opt.none { color: var(--muted); font-size: 20px; }
     .btn-row { display: flex; gap: 10px; margin-top: 8px; }
     .btn {
       flex: 1; padding: 15px; border-radius: 12px; font-size: 16px;
@@ -288,6 +306,14 @@
     <div class="sheet">
       <h2>Ajustes</h2>
       <div class="field">
+        <label>Tema</label>
+        <select id="themeSelect" style="width:100%; padding:14px; border:1.5px solid var(--line); border-radius:12px; font-size:16px; font-family:inherit; background:var(--bg); color:var(--text);">
+          <option value="auto">Automático (segue o celular)</option>
+          <option value="light">Claro</option>
+          <option value="dark">Escuro</option>
+        </select>
+      </div>
+      <div class="field">
         <label>Horário em que o dia vira</label>
         <div class="subtitle" style="margin:-2px 0 10px;">
           Os hábitos "zeram" nesse horário. Antes dele, o que você marcar conta como o dia anterior.
@@ -304,7 +330,7 @@
   <script>
     // ---------- Armazenamento (offline, no próprio celular) ----------
     const STORE_KEY = 'meus_habitos_v1';
-    const EMOJIS = ['💧','📚','🏃','🧘','💪','🥗','😴','🚭','🦷','🧹','✍️','🎯','☀️','🌙','🎨','🎸'];
+    const EMOJIS = ['💊','💉','🩺','🩹','🧴','💧','📚','🏃','🧘','💪','🥗','😴','🚭','🦷','🧹','✍️','🎯','☀️','🌙','🎨','🎸'];
 
     let state = load();
 
@@ -321,6 +347,7 @@
     // migração/segurança: garante que settings exista
     if (!state.settings) state.settings = { resetHour: 6 };
     if (typeof state.settings.resetHour !== 'number') state.settings.resetHour = 6;
+    if (!state.settings.theme) state.settings.theme = 'auto';
 
     // ---------- Utilidades de data ----------
     // O "dia ativo" vira no horário de corte (padrão 6h). Antes disso,
@@ -363,12 +390,14 @@
         const streak = calcStreak(h);
         const el = document.createElement('div');
         el.className = 'habit';
+        el.setAttribute('data-toggle', h.id);
+        const label = (h.emoji ? h.emoji + ' ' : '') + escapeHtml(h.name);
         el.innerHTML = `
-          <button class="check ${done?'done':''}" data-toggle="${h.id}" aria-label="marcar">
+          <span class="check ${done?'done':''}" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg>
-          </button>
+          </span>
           <div class="habit-info">
-            <div class="habit-name ${done?'done':''}">${h.emoji} ${escapeHtml(h.name)}</div>
+            <div class="habit-name ${done?'done':''}">${label}</div>
             <div class="streak">🔥 <strong>${streak}</strong> ${streak===1?'dia':'dias'} seguidos</div>
           </div>
           <button class="icon-btn" data-edit="${h.id}" aria-label="editar">✏️</button>
@@ -418,7 +447,7 @@
         }
         card.innerHTML = `
           <div class="cal-head">
-            <span class="emoji">${h.emoji}</span>
+            ${h.emoji ? `<span class="emoji">${h.emoji}</span>` : ''}
             <span class="name">${escapeHtml(h.name)}</span>
             <span class="streak"><strong>${total}</strong>×</span>
           </div>
@@ -430,16 +459,20 @@
 
     // ---------- Interações ----------
     document.getElementById('habitList').addEventListener('click', e => {
+      // o lápis (editar) tem prioridade e não marca o hábito
+      const edit = e.target.closest('[data-edit]');
+      if (edit) {
+        openSheet(state.habits.find(x => x.id === edit.dataset.edit));
+        return;
+      }
+      // clicar em qualquer outra parte do hábito marca/desmarca
       const toggle = e.target.closest('[data-toggle]');
       if (toggle) {
         const h = state.habits.find(x => x.id === toggle.dataset.toggle);
         const tk = todayKey();
         if (h.days[tk]) delete h.days[tk]; else h.days[tk] = true;
         save(); renderToday();
-        return;
       }
-      const edit = e.target.closest('[data-edit]');
-      if (edit) openSheet(state.habits.find(x => x.id === edit.dataset.edit));
     });
 
     // Abas
@@ -467,6 +500,13 @@
     function buildEmojiRow() {
       const row = document.getElementById('emojiRow');
       row.innerHTML = '';
+      // opção "sem ícone" (emoji vazio)
+      const none = document.createElement('button');
+      none.className = 'emoji-opt none' + (selectedEmoji === '' ? ' sel' : '');
+      none.textContent = '∅';
+      none.title = 'Sem ícone';
+      none.onclick = () => { selectedEmoji = ''; buildEmojiRow(); };
+      row.appendChild(none);
       EMOJIS.forEach(em => {
         const b = document.createElement('button');
         b.className = 'emoji-opt' + (em === selectedEmoji ? ' sel' : '');
@@ -480,7 +520,7 @@
       editingId = habit ? habit.id : null;
       document.getElementById('sheetTitle').textContent = habit ? 'Editar hábito' : 'Novo hábito';
       document.getElementById('habitInput').value = habit ? habit.name : '';
-      selectedEmoji = habit ? habit.emoji : EMOJIS[0];
+      selectedEmoji = habit ? habit.emoji : '💧';
       document.getElementById('deleteRow').style.display = habit ? 'flex' : 'none';
       buildEmojiRow();
       document.getElementById('overlay').classList.add('open');
@@ -537,8 +577,18 @@
       document.getElementById('todayLabel').textContent =
         effectiveDate().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
     }
+    function applyTheme() {
+      const t = state.settings.theme || 'auto';
+      const root = document.documentElement;
+      if (t === 'auto') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', t);
+      const dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      const meta = document.querySelector('meta[name=theme-color]');
+      if (meta) meta.setAttribute('content', dark ? '#14171f' : '#4f8cff');
+    }
     document.getElementById('settingsBtn').addEventListener('click', () => {
       buildHourOptions();
+      document.getElementById('themeSelect').value = state.settings.theme || 'auto';
       document.getElementById('settingsOverlay').classList.add('open');
     });
     document.getElementById('settingsCancel').addEventListener('click', () => {
@@ -549,13 +599,20 @@
     });
     document.getElementById('settingsSave').addEventListener('click', () => {
       state.settings.resetHour = parseInt(document.getElementById('resetHourSelect').value, 10) || 0;
+      state.settings.theme = document.getElementById('themeSelect').value;
       save();
       document.getElementById('settingsOverlay').classList.remove('open');
+      applyTheme();
       updateTodayLabel();
       renderToday();
     });
 
     // ---------- Início ----------
+    applyTheme();
+    // se o tema for automático, acompanha mudanças do sistema em tempo real
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      if ((state.settings.theme || 'auto') === 'auto') applyTheme();
+    });
     updateTodayLabel();
     renderToday();
 
