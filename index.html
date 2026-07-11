@@ -324,6 +324,7 @@
       <div id="dayDetail"></div>
       <div class="btn-row">
         <button class="btn btn-ghost" id="dayClose">Fechar</button>
+        <button class="btn btn-primary" id="dayToggle">Marcar</button>
       </div>
     </div>
   </div>
@@ -518,23 +519,49 @@
       const cell = e.target.closest('.cal-day[data-date]');
       if (cell) openDayDetail(cell.dataset.habit, cell.dataset.date);
     });
+    let currentDay = null; // { habitId, key }
     function openDayDetail(habitId, key) {
       const h = state.habits.find(x => x.id === habitId);
       if (!h) return;
+      currentDay = { habitId, key };
       const [y,m,dd] = key.split('-').map(Number);
       const label = new Date(y, m-1, dd).toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
       const val = h.days[key];
       const done = !!val;
       const time = markTime(val);
+      const future = key > todayKey();
       const nome = (h.emoji ? h.emoji + ' ' : '') + escapeHtml(h.name);
       let status;
-      if (done && time) status = `<div class="day-status done">✅ Marcado às <strong>${time}</strong></div>`;
+      if (future) status = `<div class="day-status">🔮 Esse dia ainda não chegou</div>`;
+      else if (done && time) status = `<div class="day-status done">✅ Marcado às <strong>${time}</strong></div>`;
       else if (done) status = `<div class="day-status done">✅ Marcado <span class="muted-note">(sem horário registrado)</span></div>`;
       else status = `<div class="day-status">⬜ Não foi marcado neste dia</div>`;
       document.getElementById('dayTitle').textContent = label.charAt(0).toUpperCase() + label.slice(1);
       document.getElementById('dayDetail').innerHTML = `<div class="day-habit">${nome}</div>${status}`;
+      // botão marcar/desmarcar (escondido em dias futuros)
+      const btn = document.getElementById('dayToggle');
+      if (future) {
+        btn.style.display = 'none';
+      } else {
+        btn.style.display = '';
+        btn.textContent = done ? 'Desmarcar dia' : 'Marcar dia';
+        btn.className = 'btn ' + (done ? 'btn-danger' : 'btn-primary');
+      }
       document.getElementById('dayOverlay').classList.add('open');
     }
+    function toggleDay(habitId, key) {
+      const h = state.habits.find(x => x.id === habitId);
+      if (!h || key > todayKey()) return;
+      if (h.days[key]) delete h.days[key];
+      else h.days[key] = (key === todayKey()) ? nowTime() : true; // dia atual guarda horário; passado fica sem
+      save();
+      renderToday();
+      renderHistory();
+      openDayDetail(habitId, key); // reabre atualizado
+    }
+    document.getElementById('dayToggle').addEventListener('click', () => {
+      if (currentDay) toggleDay(currentDay.habitId, currentDay.key);
+    });
     document.getElementById('dayClose').addEventListener('click', () =>
       document.getElementById('dayOverlay').classList.remove('open'));
     document.getElementById('dayOverlay').addEventListener('click', e => {

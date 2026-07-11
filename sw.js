@@ -1,5 +1,5 @@
 // Service worker: guarda o app pra funcionar offline.
-const CACHE = 'habitos-v2';
+const CACHE = 'habitos-v3';
 const ASSETS = [
   './',
   './index.html',
