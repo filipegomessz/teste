@@ -20,8 +20,10 @@ Salve prints em uma pasta temporária (scratchpad), não no repositório.
 
 ## 0. Juntar as referências
 
-- **Imagens coladas no chat** aparecem com um caminho (`source: ...`). Use esse caminho
-  nos scripts.
+- **Imagens coladas no chat** às vezes aparecem com um caminho (`source: ...`); use esse
+  caminho nos scripts. Se a imagem não tiver caminho (comum na sessão local), peça ao
+  usuário para salvar o arquivo numa pasta do projeto (ex.: `referencias/`) ou arrastar
+  o arquivo para o terminal, que cola o caminho. Sem arquivo em disco, os scripts não rodam.
 - **Referência do acervo** ("no estilo GAZU", "igual a 04"): leia
   `.claude/skills/referencias-design/INDEX.md`, depois só a ficha e a imagem citadas.
 - **Vídeo**: o usuário só consegue mandar prints; peça (ou use) a descrição do

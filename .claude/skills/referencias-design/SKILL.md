@@ -30,7 +30,8 @@ Quando o usuário mandar imagens para o acervo (ou aceitar salvar uma referênci
 
 1. Próximo número livre em `INDEX.md` (01, 02, …). Nome curto em minúsculas com
    hífens que descreva o estilo (ex.: `06-cafe-editorial`).
-2. Copie a imagem do caminho informado no chat (`source: ...`) para
+2. Copie a imagem do caminho informado no chat (`source: ...` ou o arquivo que o
+   usuário salvou/arrastou; se não houver caminho, peça o arquivo) para
    `imagens/NN-nome.ext`, mantendo a extensão. Se vier de vídeo, anote isso.
 3. Meça as cores:
    `node .claude/skills/imagem-para-site/scripts/cores.mjs imagens/NN-nome.ext --n 8`
